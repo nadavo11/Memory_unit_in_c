@@ -27,8 +27,37 @@ int MMU_request();
 bool is_memory_empty();
 bool is_memory_full();
 
-sem_t ACK;
+
+/**--------------------------------------------------------------------------   */
+///                           semaphores & mutexes
 int terminate = 0;
+sem_t ACK;
+
+pthread_mutex_t mem_lock;
+pthread_mutex_t HD_lock;
+
+pthread_cond_t mem_not_full;
+pthread_cond_t mem_not_empty;
+pthread_cond_t evict_cond;
+pthread_cond_t HD_request;
+
+/**--------------------------------------------------------------------------   */
+///                           semaphores & mutexes
+pthread_t process1;
+pthread_t process2;
+
+pthread_t MMU_main_thread;
+pthread_t evicter_thread;
+pthread_t printer_thread;
+
+pthread_t HD_thread;
+pthread_t
+enum requester {
+    MMU,
+    EVICTER
+};
+
+
 /**--------------------------------------------------------------------------   */
 /**                                Process                                      */
 /** --------------------------------------------------------------------------  */
@@ -90,10 +119,6 @@ bool dirty[N];
 
 int next_page_to_load = 0;
 int next_page_to_evict = 0;
-pthread_mutex_t mem_lock;
-pthread_cond_t mem_not_full;
-pthread_cond_t mem_not_empty;
-pthread_cond_t evict_cond;
 
 
 bool is_memory_empty() {
@@ -301,6 +326,30 @@ The evicter thread continues evicting pages until the number of used slots in th
 
 
 
+/**--------------------------------------------------------------------------   */
+/**                             Hard Disc                                       */
+/** --------------------------------------------------------------------------- */
+
+void* HD_tread(void* arg) {
+
+    int num_used_slots = 5;
+
+    while (! terminate) {
+
+        pthread_cond_wait(&HD_request,&HD_lock);
+        ///HD request called
+
+        //delay
+        struct timespec req = {0, HD_ACCESS_T};
+        nanosleep(&req, NULL);
+
+        /// free mutex, wake up caller
+        //TODO: figure out WHO exactly requested HD, and wake him up
+
+    }
+
+    return NULL;
+}
 
 
 
@@ -311,7 +360,8 @@ The evicter thread continues evicting pages until the number of used slots in th
 /**                                                                             */
 /** --------------------------------------------------------------------------- */
 int main() {
-    printf("Hello, World!\n");
+
+    pthread_create()
     // fork();
     process1();
     return 0;
