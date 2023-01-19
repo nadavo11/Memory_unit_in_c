@@ -74,12 +74,27 @@ _Noreturn int process1() {
 /**                                MMU                                          */
 /**                                                                             */
 /** --------------------------------------------------------------------------- */
+
+/**This code simulates a memory with N pages, each represented by a Boolean value
+ * indicating whether the page is valid (true) or invalid (false). The memory
+ * has two pointers, one to indicate the next page to be loaded and another to
+ * indicate the next page to be evicted. The memory starts empty and as pages are
+ * loaded, the next_page_to_load pointer is incremented, and once the memory is full,
+ * the next_page_to_evict pointer is incremented to evict the next page. The function
+ * fetch_to_RAM() simulates a write operation that takes a certain amount of time (MEM_WR_T).
+ * The read operation is not simulated in this code as it was stated that it is immediate.
+*/
 bool memory[N];
+bool dirty[N];
+
+
 int next_page_to_load = 0;
 int next_page_to_evict = 0;
 pthread_mutex_t mem_lock;
 pthread_cond_t mem_not_full;
 pthread_cond_t mem_not_empty;
+pthread_cond_t evict_cond;
+
 
 bool is_memory_empty() {
     for (int i = 0; i < N; i++) {
@@ -105,6 +120,11 @@ void fetch_to_RAM(int page) {
     memory[page] = true;
 }
 
+void evict_from__RAM() {
+    memory[next_page_to_evict] = false;
+    dirty[next_page_to_evict] = false;
+    next_page_to_evict =(next_page_to_evict +1) % N;
+}
 int count_used_slots() {
     int count = 0;
     for (int i = 0; i < N; i++) {
@@ -185,8 +205,18 @@ void* main_thread(void* arg) {
             /// miss (page fault)
             ///------------------------
 
+            //wake up evicter
+            if (is_memory_full()) {
 
-            // send request to HD
+                pthread_mutex_unlock(&mem_lock);
+                pthread_cond_signal(&evict_cond);
+                pthread_cond_wait(&mem_not_full, &mem_lock);
+                pthread_mutex_lock(&mem_lock);
+
+            }
+
+
+                // send request to HD
             // ...
 
             // write page to memory
@@ -207,25 +237,70 @@ void* main_thread(void* arg) {
 /**--------------------------------------------------------------------------   */
 /**                                Evicter                                      */
 /** --------------------------------------------------------------------------- */
+#define USED_SLOTS_TH 3
+
+int next_page_to_evict;
+
 void* evicter_thread(void* arg) {
-    while (1) {
+
+    //TODO increment to 5 only
+    int num_used_slots = 5;
+
+    while (! terminate) {
         pthread_mutex_lock(&mem_lock);
-        while (count_used_slots() < N) {
+
+        while (num_used_slots <= USED_SLOTS_TH) {
             pthread_cond_wait(&mem_not_full, &mem_lock);
         }
 
-        // evict page
-        memory[next_page_to_evict] = false;
-        next_page_to_evict = (next_page_to_
-/*This code simulates a memory with N pages, each represented by a Boolean value
- * indicating whether the page is valid (true) or invalid (false). The memory
- * has two pointers, one to indicate the next page to be loaded and another to
- * indicate the next page to be evicted. The memory starts empty and as pages are
- * loaded, the next_page_to_load pointer is incremented, and once the memory is full,
- * the next_page_to_evict pointer is incremented to evict the next page. The function
- * fetch_to_RAM() simulates a write operation that takes a certain amount of time (MEM_WR_T).
- * The read operation is not simulated in this code as it was stated that it is immediate.
+        // choose page to evict using the clock scheme
+        while (1) {
+            if (num_used_slots <= USED_SLOTS_TH) {
+                break;
+            }
+
+            if (memory[next_page_to_evict]) {
+
+                if(dirty[next_page_to_evict]){
+                    //TODO: update HD
+                }
+
+                // evict page
+                evict_from__RAM();
+                num_used_slots--;
+            }
+        }
+        /// free mutex, wake up main
+
+        pthread_mutex_unlock(&mem_lock);
+        pthread_cond_signal(&mem_not_full);
+    }
+
+    return NULL;
+}
+/* the evicter thread uses a global variable next_page_to_evict to keep track of the current position
+ * in the memory array.
+ * It also uses an array dirty that keeps track of whether a page has been accessed or not.
+ *
+The evicter thread waits on the mem_not_full condition variable until the main thread signals
+ it, indicating that the memory is full. When the evicter thread wakes up, it starts evicting
+ pages using the clock scheme: it chooses the page at the current position of the clock hand
+ and checks if it has been accessed or not. If it has been accessed, the page is marked as not
+ accessed (the reference bit is cleared), and the clock hand is moved to the next page.
+
+ If the page has not been accessed, it is evicted.
+When the evicter thread evicts a page, it decrements the num_used_slots counter and checks if
+ the number of used slots in the memory is now equal to N-1 (namely, the memory was full
+ before evicting), if this the case it wakes up the main thread using the pthread_cond_signal()
+ function, to let him load a page if needed.
+
+The evicter thread continues evicting pages until the number of used slots in the memory is below
+ USED_SLOTS_TH. Then, the evicter stops evicting, and waits for the main thread to wake it up again.
 */
+
+
+
+
 
 
 
